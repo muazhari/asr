@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import json
+import math
 import os
 import sys
 import wave
@@ -43,7 +44,20 @@ def subtitle_formatter(response, format):
 
     start = response["start"]
     end = start + response["duration"]
-    transcript = response.get("channel", {}).get("alternatives", [{}])[0].get("transcript", "")
+    alternatives = response.get("channel", {}).get("alternatives", [{}])[0]
+    transcript = alternatives.get("transcript", "")
+    words = alternatives.get("words", [])
+
+    # attach speaker diarization below transcript words
+    transcript_words = []
+    transcript_speakers = []
+    for word in words:
+        speaker = f"{word.get('speaker', '?')}"
+        suffix = " " * (int(math.fabs(len(word["word"]) - len(speaker))))
+        transcript_speaker = speaker if len(speaker) >= len(word["word"]) else speaker + suffix
+        transcript_speakers.append(transcript_speaker)
+        transcript_word = word["word"] if len(word["word"]) >= len(speaker) else word["word"] + suffix
+        transcript_words.append(transcript_word)
 
     separator = "," if format == "srt" else '.'
     prefix = "- " if format == "vtt" else ""
@@ -51,7 +65,8 @@ def subtitle_formatter(response, format):
         f"{subtitle_line_counter}\n"
         f"{subtitle_time_formatter(start, separator)} --> "
         f"{subtitle_time_formatter(end, separator)}\n"
-        f"{prefix}{transcript}\n\n"
+        f"{prefix}{' '.join(transcript_words)}\n"
+        f"{prefix}{' '.join(transcript_speakers)}\n\n"
     )
 
     return subtitle_string
@@ -65,6 +80,9 @@ def mic_callback(input_data, frame_count, time_info, status_flag):
 
 async def run(key, method, format, **kwargs):
     deepgram_url = f'{kwargs["host"]}/v1/listen?punctuate=true'
+
+    if kwargs["diarize"]:
+        deepgram_url += f"&diarize={kwargs['diarize']}"
 
     if kwargs["language"]:
         deepgram_url += f"&language={kwargs['language']}"
@@ -93,6 +111,8 @@ async def run(key, method, format, **kwargs):
             print(f'ℹ️  Tier: {kwargs["tier"]}')
         if kwargs["language"]:
             print(f'ℹ️  Language: {kwargs["language"]}')
+        if kwargs["diarize"]:
+            print(f'ℹ️  Diarization: {kwargs["diarize"]}')
         print("🟢 (1/5) Successfully opened Deepgram streaming connection")
 
         async def sender(ws):
@@ -174,11 +194,9 @@ async def run(key, method, format, **kwargs):
                     if res.get("msg"):
                         print(res["msg"])
                     if res.get("is_final"):
-                        transcript = (
-                            res.get("channel", {})
-                            .get("alternatives", [{}])[0]
-                            .get("transcript", "")
-                        )
+                        alternatives = res.get("channel", {}).get("alternatives", [{}])[0]
+                        transcript = alternatives.get("transcript", "")
+
                         if kwargs["timestamps"]:
                             words = res.get("channel", {}).get("alternatives", [{}])[0].get("words", [])
                             start = words[0]["start"] if words else None
@@ -375,6 +393,14 @@ def parse_args():
         const="multi",
         default="multi",
     )
+    parser.add_argument(
+        "-d",
+        "--diarize",
+        help='Whether to diarize the audio data. Defaults to False.',
+        nargs="?",
+        const=1,
+        default=False,
+    )
 
     # Parse the host
     parser.add_argument(
@@ -399,8 +425,13 @@ def main():
     try:
         if input.lower().startswith("mic"):
             asyncio.run(
-                run(args.key, "mic", format, model=args.model, tier=args.tier, host=host, timestamps=args.timestamps,
-                    language=args.language)
+                run(args.key, "mic", format,
+                    model=args.model,
+                    tier=args.tier,
+                    host=host,
+                    timestamps=args.timestamps,
+                    language=args.language,
+                    diarize=args.diarize)
             )
 
         elif input.lower().endswith("wav"):
@@ -432,6 +463,7 @@ def main():
                             host=host,
                             timestamps=args.timestamps,
                             language=args.language,
+                            diarize=args.diarize,
                         )
                     )
             else:
@@ -440,8 +472,14 @@ def main():
                 )
 
         elif input.lower().startswith("http"):
-            asyncio.run(run(args.key, "url", format, model=args.model, tier=args.tier, url=input, host=host,
-                            timestamps=args.timestamps, language=args.language))
+            asyncio.run(run(args.key, "url", format,
+                            model=args.model,
+                            tier=args.tier,
+                            url=input,
+                            host=host,
+                            timestamps=args.timestamps,
+                            language=args.language,
+                            diarize=args.diarize))
 
         else:
             raise argparse.ArgumentTypeError(

@@ -2,4 +2,4 @@ aiohttp
 PyAudio
 pydub
 websockets
-RealtimeSTT
+#RealtimeSTT
