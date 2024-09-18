@@ -4,6 +4,7 @@ import json
 import math
 import os
 import sys
+import uuid
 import wave
 from datetime import datetime
 
@@ -11,6 +12,7 @@ import aiohttp
 import pyaudio
 import websockets
 
+session_id = uuid.uuid4()
 startTime = datetime.now()
 
 all_mic_data = []
@@ -222,10 +224,13 @@ async def run(key, method, format, **kwargs):
                                 if not os.path.exists(data_dir):
                                     os.makedirs(data_dir)
 
+                                transcript_file_name = f"{session_id.hex}_{startTime.isoformat()}.{format}"
+                                transcript_file_name = transcript_file_name.replace(":", "-")
+
                                 transcript_file_path = os.path.abspath(
                                     os.path.join(
                                         data_dir,
-                                        f"{startTime.strftime('%Y%m%d%H%M')}.{format}",
+                                        transcript_file_name,
                                     )
                                 )
                                 with open(transcript_file_path, "w") as f:
@@ -234,10 +239,12 @@ async def run(key, method, format, **kwargs):
                                 # also save mic data if we were live streaming audio
                                 # otherwise the wav file will already be saved to disk
                                 if method == "mic":
+                                    wave_file_name = f"{session_id.hex}_{startTime.isoformat()}.wav"
+                                    wave_file_name = wave_file_name.replace(":", "-")
                                     wave_file_path = os.path.abspath(
                                         os.path.join(
                                             data_dir,
-                                            f"{startTime.strftime('%Y%m%d%H%M')}.wav",
+                                            wave_file_name,
                                         )
                                     )
                                     wave_file = wave.open(wave_file_path, "wb")
