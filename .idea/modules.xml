@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/live-streaming-starter-kit.iml" filepath="$PROJECT_DIR$/.idea/live-streaming-starter-kit.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/asr.iml" filepath="$PROJECT_DIR$/.idea/asr.iml" />
     </modules>
   </component>
 </project>
