@@ -2,21 +2,25 @@ import argparse
 import asyncio
 import json
 import math
+import multiprocessing
 import os
 import sys
 import uuid
 import wave
+from concurrent import futures
 from datetime import datetime
+from multiprocessing.connection import Connection
 
 import aiohttp
 import pyaudio
 import websockets
 
 session_id = uuid.uuid4()
-startTime = datetime.now()
+start_time = datetime.now()
 
 all_mic_data = []
 all_transcripts = []
+all_responses = []
 
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
@@ -30,6 +34,66 @@ audio_queue = asyncio.Queue()
 REALTIME_RESOLUTION = 0.250
 
 subtitle_line_counter = 0
+
+res_pipe_1, res_pipe_2 = multiprocessing.Pipe()
+wav_pipe_1, wav_pipe_2 = multiprocessing.Pipe()
+sub_pipe_1, sub_pipe_2 = multiprocessing.Pipe()
+
+data_dir = os.path.abspath(
+    os.path.join(os.path.curdir, "data")
+)
+if not os.path.exists(data_dir):
+    os.makedirs(data_dir)
+
+
+def res_execution(pipe: Connection):
+    for data in iter(pipe.recv, None):
+        response_file_name = f"{data["session_id"].hex}_{data["start_time"].isoformat()}.{data["format"]}"
+        response_file_name = response_file_name.replace(":", "-")
+        response_file_path = os.path.abspath(
+            os.path.join(
+                data["data_dir"],
+                response_file_name,
+            )
+        )
+        with open(response_file_path, "w") as f:
+            f.write(json.dumps(data["all_responses"]))
+
+
+def sub_execution(pipe: Connection):
+    for data in iter(pipe.recv, None):
+        transcript_file_name = f"{data["session_id"].hex}_{data["start_time"].isoformat()}.{data["format"]}"
+        transcript_file_name = transcript_file_name.replace(":", "-")
+        transcript_file_path = os.path.abspath(
+            os.path.join(
+                data["data_dir"],
+                transcript_file_name,
+            )
+        )
+        with open(transcript_file_path, "w") as f:
+            f.write("".join(data["all_transcripts"]))
+
+
+def wav_execution(pipe):
+    for data in iter(pipe.recv, None):
+        wave_file_name = f"{data["session_id"].hex}_{data["start_time"].isoformat()}.{data["format"]}"
+        wave_file_name = wave_file_name.replace(":", "-")
+        wave_file_path = os.path.abspath(
+            os.path.join(
+                data["data_dir"],
+                wave_file_name,
+            )
+        )
+        with wave.open(wave_file_path, "wb") as wave_file:
+            wave_file.setnchannels(data["channels"])
+            wave_file.setsampwidth(data["sample_size"])
+            wave_file.setframerate(data["rate"])
+            wave_file.writeframes(b"".join(data["all_mic_data"]))
+
+
+res_process = multiprocessing.Process(target=res_execution, args=(res_pipe_2,))
+sub_process = multiprocessing.Process(target=sub_execution, args=(sub_pipe_2,))
+wav_process = multiprocessing.Process(target=wav_execution, args=(wav_pipe_2,))
 
 
 def subtitle_time_formatter(seconds, separator):
@@ -224,37 +288,30 @@ async def run(key, method, format, **kwargs):
                                 if not os.path.exists(data_dir):
                                     os.makedirs(data_dir)
 
-                                transcript_file_name = f"{session_id.hex}_{startTime.isoformat()}.{format}"
-                                transcript_file_name = transcript_file_name.replace(":", "-")
-
-                                transcript_file_path = os.path.abspath(
-                                    os.path.join(
-                                        data_dir,
-                                        transcript_file_name,
-                                    )
-                                )
-                                with open(transcript_file_path, "w") as f:
-                                    f.write("".join(all_transcripts))
+                                sub_data: Dict = {
+                                    "session_id": session_id,
+                                    "start_time": start_time,
+                                    "all_transcripts": all_transcripts,
+                                    "format": format,
+                                    "data_dir": data_dir,
+                                }
+                                sub_pipe_1.send(sub_data)
 
                                 # also save mic data if we were live streaming audio
                                 # otherwise the wav file will already be saved to disk
                                 if method == "mic":
-                                    wave_file_name = f"{session_id.hex}_{startTime.isoformat()}.wav"
-                                    wave_file_name = wave_file_name.replace(":", "-")
-                                    wave_file_path = os.path.abspath(
-                                        os.path.join(
-                                            data_dir,
-                                            wave_file_name,
-                                        )
-                                    )
-                                    wave_file = wave.open(wave_file_path, "wb")
-                                    wave_file.setnchannels(CHANNELS)
-                                    wave_file.setsampwidth(SAMPLE_SIZE)
-                                    wave_file.setframerate(RATE)
-                                    wave_file.writeframes(b"".join(all_mic_data))
-                                    wave_file.close()
+                                    wav_data: Dict = {
+                                        "session_id": session_id,
+                                        "start_time": start_time,
+                                        "all_mic_data": all_mic_data,
+                                        "channels": CHANNELS,
+                                        "sample_size": SAMPLE_SIZE,
+                                        "rate": RATE,
+                                        "format": "wav",
+                                        "data_dir": data_dir,
+                                    }
+                                    wav_pipe_1.send(wav_data)
 
-                    # handle end of stream
                     if res.get("created"):
                         print(
                             f'🟢 Request finished with a duration of {res["duration"]} seconds. Exiting!'
@@ -270,7 +327,7 @@ async def run(key, method, format, **kwargs):
                 channels=CHANNELS,
                 rate=RATE,
                 input=True,
-                input_device_index=3,
+                input_device_index=4,
                 frames_per_buffer=CHUNK,
                 stream_callback=mic_callback,
             )
@@ -422,6 +479,10 @@ def parse_args():
 
 
 def main():
+    res_process.start()
+    sub_process.start()
+    wav_process.start()
+
     """Entrypoint for the example."""
     # Parse the command-line arguments.
     args = parse_args()
