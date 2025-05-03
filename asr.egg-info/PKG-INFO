@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: asr
+Version: 0.1.0
+Summary: Add your description here
+Requires-Python: >=3.10
+Requires-Dist: aiohttp
+Requires-Dist: brotlicffi
+Requires-Dist: PyAudio
+Requires-Dist: PyAudioWPatch
+Requires-Dist: pydub
+Requires-Dist: websockets

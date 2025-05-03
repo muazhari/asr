@@ -1,0 +1,19 @@
+[project]
+name = "asr"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.10"
+dependencies = [
+    "aiohttp",
+    "brotlicffi",
+    "PyAudio",
+    "PyAudioWPatch",
+    "pydub",
+    "websockets",
+    #"RealtimeSTT"
+]
+
+[tool.setuptools.packages.find]
+exclude = [
+    "audio_io"
+]

@@ -16,7 +16,7 @@ from multiprocessing.connection import Connection
 from typing import Dict, List, Any
 
 import aiohttp
-import pyaudio
+import pyaudiowpatch as pyaudio
 import websockets
 
 session_id = uuid.uuid4()
@@ -24,7 +24,7 @@ start_time = datetime.now()
 
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
-RATE = 16000
+RATE = 48000
 CHUNK = 8000
 
 mic_data: List = []
@@ -44,8 +44,8 @@ if not os.path.exists(data_dir):
 
 
 def res_executor(pipe: Connection):
-    for data in iter(pipe.recv, None):
-        try:
+    try:
+        for data in iter(pipe.recv, None):
             response_file_name = f"{data['session_id'].hex}_{data['start_time'].isoformat()}_{data['language']}.{data['format']}"
             response_file_name = response_file_name.replace(":", "-")
             response_file_path = os.path.abspath(
@@ -56,13 +56,13 @@ def res_executor(pipe: Connection):
             )
             with open(response_file_path, "w") as f:
                 f.write(json.dumps(data["all_responses"]))
-        except Exception as e:
-            traceback.print_exc()
+    except Exception as e:
+        traceback.print_exc()
 
 
 def sub_executor(pipe: Connection):
-    for data in iter(pipe.recv, None):
-        try:
+    try:
+        for data in iter(pipe.recv, None):
             transcript_file_name = f"{data['session_id'].hex}_{data['start_time'].isoformat()}_{data['language']}.{data['format']}"
             transcript_file_name = transcript_file_name.replace(":", "-")
             transcript_file_path = os.path.abspath(
@@ -73,13 +73,13 @@ def sub_executor(pipe: Connection):
             )
             with open(transcript_file_path, "w") as f:
                 f.write(json.dumps(data["all_transcripts"]))
-        except Exception as e:
-            traceback.print_exc()
+    except Exception as e:
+        traceback.print_exc()
 
 
 def wav_executor(pipe):
-    for data in iter(pipe.recv, None):
-        try:
+    try:
+        for data in iter(pipe.recv, None):
             wave_file_name = f"{data['session_id'].hex}_{data['start_time'].isoformat()}_{data['language']}.{data['format']}"
             wave_file_name = wave_file_name.replace(":", "-")
             wave_file_path = os.path.abspath(
@@ -93,8 +93,8 @@ def wav_executor(pipe):
                 wave_file.setsampwidth(data["sample_size"])
                 wave_file.setframerate(data["rate"])
                 wave_file.writeframes(b"".join(data["mic_data"]))
-        except Exception as e:
-            traceback.print_exc()
+    except Exception as e:
+        traceback.print_exc()
 
 
 def subtitle_time_formatter(seconds, separator):
@@ -121,8 +121,9 @@ def subtitle_formatter(response, format, subtitle_line_counter):
         suffix = " " * (int(math.fabs(len(word["punctuated_word"]) - len(speaker))))
         transcript_speaker = speaker if len(speaker) >= len(word["punctuated_word"]) else speaker + suffix
         transcript_speakers.append(transcript_speaker)
-        transcript_word = word["punctuated_word"] if len(word["punctuated_word"]) >= len(speaker) else word[
-                                                                                                           "punctuated_word"] + suffix
+        transcript_word = word["punctuated_word"] \
+            if len(word["punctuated_word"]) >= len(speaker) \
+            else word["punctuated_word"] + suffix
         transcript_words.append(transcript_word)
 
     separator = "," if format == "srt" else '.'
@@ -167,7 +168,7 @@ async def ws_executor(key, method, format, **kwargs):
         deepgram_url += f"&tier={kwargs['tier']}"
 
     if method == "mic":
-        deepgram_url += "&encoding=linear16&sample_rate=16000"
+        deepgram_url += f"&encoding=linear16&sample_rate={RATE}"
 
     elif method == "wav":
         data = kwargs["data"]
@@ -175,12 +176,10 @@ async def ws_executor(key, method, format, **kwargs):
 
     # Connect to the real-time streaming endpoint, attaching our credentials.
     async with websockets.connect(
-            deepgram_url, extra_headers={"Authorization": "Token {}".format(key)}
+            deepgram_url, additional_headers={"Authorization": "Token {}".format(key)}
     ) as ws:
         print("")
-        print(f'ℹ️  Request ID: {ws.response_headers.get("dg-request-id")}')
         print(f'ℹ️  Deepgram URL: {deepgram_url}')
-        print(f'ℹ️  Deepgram Request Headers:\n{ws.request_headers}'.strip())
         if kwargs["model"]:
             print(f'ℹ️  Model: {kwargs["model"]}')
         if kwargs["tier"]:
@@ -198,7 +197,7 @@ async def ws_executor(key, method, format, **kwargs):
 
         async def ws_sender(ws):
             print(
-                f'🟢 (2/5) Ready to stream {method if (method == "mic" or method == "url") else kwargs["filepath"]} audio to Deepgram{". Speak into your microphone to transcribe." if method == "mic" else ""}'
+                f'🟢 (2/5) Ready to stream {method if (method == "mic" or method == "url") else kwargs["filepath"]} audio to Deepgram{". Speak into your device to transcribe." if method == "mic" else ""}'
             )
 
             if method == "mic":
@@ -247,7 +246,6 @@ async def ws_executor(key, method, format, **kwargs):
 
         async def ws_receiver(ws):
             """Print out the messages received from the server."""
-            first_message = True
             first_transcript = True
             transcript = ""
             subtitle_line_counter = 0
@@ -271,11 +269,6 @@ async def ws_executor(key, method, format, **kwargs):
                 res_key = f"{kwargs['language']}/res"
                 pipes[res_key][0].send(res_data)
 
-                if first_message:
-                    # print(
-                    #     "🟢 (3/5) Successfully receiving Deepgram messages, waiting for finalized transcription..."
-                    # )
-                    first_message = False
                 # handle local server messages
                 if res.get("msg"):
                     print(f"{kwargs['language']}")
@@ -369,7 +362,6 @@ async def run(key, method, format, **kwargs):
 
     async def res_receiver():
         """Print out the messages received from the server."""
-        first_message = True
         first_transcript = True
         all_transcripts = []
         all_responses = []
@@ -443,13 +435,6 @@ async def run(key, method, format, **kwargs):
             }
             pipes[res_key][0].send(res_data)
 
-            if first_message:
-                print("")
-                print(
-                    "🟢 (3/5) Successfully receiving Deepgram messages, waiting for finalized transcription..."
-                )
-                first_message = False
-
             # handle local server messages
             if res.get("msg"):
                 print(res["msg"])
@@ -519,7 +504,7 @@ async def run(key, method, format, **kwargs):
             channels=CHANNELS,
             rate=RATE,
             input=True,
-            input_device_index=2,
+            input_device_index=kwargs["device"],
             frames_per_buffer=CHUNK,
             stream_callback=mic_callback(kwargs["language"]),
         )
@@ -563,9 +548,9 @@ def validate_input(input):
 
 def validate_format(format):
     if (
-            format.lower() == ("text")
-            or format.lower() == ("vtt")
-            or format.lower() == ("srt")
+            format.lower() == "text"
+            or format.lower() == "vtt"
+            or format.lower() == "srt"
     ):
         return format
 
@@ -596,7 +581,10 @@ def parse_args():
         description="Submits data to the real-time streaming endpoint."
     )
     parser.add_argument(
-        "-k", "--key", required=True, help="YOUR_DEEPGRAM_API_KEY (authorization)"
+        "-k",
+        "--key",
+        help="YOUR_DEEPGRAM_API_KEY (authorization)",
+        default=os.environ.get("DEEPGRAM_API_KEY")
     )
     parser.add_argument(
         "-i",
@@ -604,19 +592,22 @@ def parse_args():
         help='Input to stream to Deepgram. Can be "mic" to stream from your microphone (requires pyaudio), the path to a WAV file, or the URL to a direct audio stream. Defaults to the included file preamble.wav',
         nargs="?",
         const=1,
-        default="preamble.wav",
         type=validate_input,
     )
     parser.add_argument(
-        "-m",
+        "--device",
+        help="Which device index to use",
+        type=int,
+        required=True,
+    )
+    parser.add_argument(
         "--model",
         help='Which model to make your request against. Defaults to none specified. See https://developers.deepgram.com/docs/models-overview for all model options.',
         nargs="+",
         type=str,
-        default=["nova-2-meeting", "nova-2"]
+        default=["nova-3", "nova-3"]
     )
     parser.add_argument(
-        "-t",
         "--tier",
         help='Which model tier to make your request against. Defaults to none specified. See https://developers.deepgram.com/docs/tier for all tier options.',
         nargs="?",
@@ -624,7 +615,6 @@ def parse_args():
         default="",
     )
     parser.add_argument(
-        "-ts",
         "--timestamps",
         help='Whether to include timestamps in the printed streaming transcript. Defaults to False.',
         nargs="?",
@@ -632,7 +622,6 @@ def parse_args():
         default=False,
     )
     parser.add_argument(
-        "-f",
         "--format",
         help='Format for output. Can be "text" to return plain text, "VTT", or "SRT". If set to VTT or SRT, the audio file and subtitle file will be saved to the data/ directory. Defaults to "text".',
         nargs="?",
@@ -641,7 +630,6 @@ def parse_args():
         type=validate_format,
     )
     parser.add_argument(
-        "-l",
         "--language",
         help='The language of the audio data. Defaults to ["en", "id"].',
         nargs="+",
@@ -649,7 +637,6 @@ def parse_args():
         default=["en", "id"],
     )
     parser.add_argument(
-        "-d",
         "--diarize",
         help='Whether to diarize the audio data. Defaults to False.',
         nargs="?",
@@ -681,13 +668,16 @@ def main():
         try:
             if input.lower().startswith("mic"):
                 asyncio.run(
-                    run(args.key, "mic", format,
+                    run(
+                        args.key, "mic", format,
                         model=args.model,
                         tier=args.tier,
                         host=host,
                         timestamps=args.timestamps,
                         language=args.language,
-                        diarize=args.diarize)
+                        diarize=args.diarize,
+                        device=args.device,
+                    )
                 )
 
             elif input.lower().endswith("wav"):
@@ -741,35 +731,6 @@ def main():
                 raise argparse.ArgumentTypeError(
                     f'🔴 {input} is an invalid input. Please enter the path to a WAV file, a valid stream URL, or "mic" to stream from your microphone.'
                 )
-
-        except websockets.exceptions.InvalidStatusCode as e:
-            print(f'🔴 ERROR: Could not connect to Deepgram! {e.headers.get("dg-error")}')
-            print(
-                f'🔴 Please contact Deepgram Support (developers@deepgram.com) with request ID {e.headers.get("dg-request-id")}'
-            )
-            traceback.print_exc()
-        except websockets.exceptions.ConnectionClosedError as e:
-            error_description = f"Unknown websocket error."
-            print(
-                f"🔴 ERROR: Deepgram connection unexpectedly closed with code {e.code} and payload {e.reason}"
-            )
-
-            if e.reason == "DATA-0000":
-                error_description = "The payload cannot be decoded as audio. It is either not audio data or is a codec unsupported by Deepgram."
-            elif e.reason == "NET-0000":
-                error_description = "The service has not transmitted a Text frame to the client within the timeout window. This may indicate an issue internally in Deepgram's systems or could be due to Deepgram not receiving enough audio data to transcribe a frame."
-            elif e.reason == "NET-0001":
-                error_description = "The service has not received a Binary frame from the client within the timeout window. This may indicate an internal issue in Deepgram's systems, the client's systems, or the network connecting them."
-
-            print(f"🔴 {error_description}")
-            print(
-                f"🔴 Please contact Deepgram Support (developers@deepgram.com) with the request ID listed above."
-            )
-            traceback.print_exc()
-
-        except websockets.exceptions.ConnectionClosedOK:
-            traceback.print_exc()
-
         except Exception as e:
             print(f"🔴 ERROR: {e}")
             traceback.print_exc()

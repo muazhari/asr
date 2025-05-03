@@ -1,5 +1,6 @@
 aiohttp
+brotlicffi
 PyAudio
+PyAudioWPatch
 pydub
 websockets
-#RealtimeSTT

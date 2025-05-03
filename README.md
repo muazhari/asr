@@ -1,34 +1,31 @@
-# Deepgram Live Streaming Starter Kit
+# voice-transcriber
 
-[![Discord](https://dcbadge.vercel.app/api/server/xWRaCDBtW4?style=flat)](https://discord.gg/xWRaCDBtW4)
+> A simple voice transcriber application using Deepgram.
 
-Deepgram's Live Streaming Starter Kit will take you step by step through the process of getting up and running with Deepgram's live streaming API.
+## Tutorial
 
+### 1. Install the dependencies.
 
-# Documentation
+```bash
+uv pip install -e . -U
+```
 
-Please refer to our [Documentation](https://developers.deepgram.com/docs/getting-started-with-the-streaming-test-suite) on how to use the Streaming Starter Kit.
+### 2. Get device index.
 
-# Getting an API Key
+```bash
+python audio_io.py
+```
 
-🔑 To access the Deepgram API you will need a [free Deepgram API Key](https://console.deepgram.com/signup?jump=keys).
+### 3. Run the app variant.
 
-# Requirements
+- Single Language
 
-- Python >= 3.6+
-- [portaudio](http://portaudio.com/)
-- A valid Deepgram API key
+```bash
+python app.py --input mic --device 1 --model nova-3 --language en --format srt --diarize true
+```
 
-# Installation
+- Multiple Language
 
-1. Clone the [streaming starter kit](https://github.com/deepgram/streaming-test-suite/) repository
-2. Install [portaudio](http://portaudio.com/) (if not already installed)
-3. Run `pip install -r requirements.txt`
-
-## Port Audio
-
-If you use Homebrew or Conda, we recommend installing with `brew install portaudio` or `conda install portaudio`.
-
-Otherwise, you can download a zip file from [portaudio.com](http://portaudio.com/), unzip it, and then consult [PortAudio's docs](http://www.portaudio.com/docs/v19-doxydocs/pages.html) as a reference for how to build the package on your operating system. For Linux and MacOS, the build command within the top-level `portaudio/` directory is `./configure && make`.
-
-PortAudio is known to have compatibility issues on Windows. However, this dependency is only required if you plan to stream audio from your microphone.
+```bash
+python app.py --input mic --device 1 --model nova-3 nova-3 --language en id --format srt --diarize true
+```
